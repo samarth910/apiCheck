@@ -27,13 +27,21 @@ def kundli():
                     import re
                     import json
                     
-                    # Fix missing quotes around string values (common issue)
                     fixed_data = raw_data
                     
-                    # Pattern to find unquoted string values after colons
-                    # Matches: "key": value (where value is not a number, boolean, or already quoted)
+                    # Fix 1: Remove leading zeros from numbers (e.g., 00 -> 0)
+                    fixed_data = re.sub(r':\s*0+(\d+)', r': \1', fixed_data)
+                    
+                    # Fix 2: Handle standalone 00 -> 0
+                    fixed_data = re.sub(r':\s*00(?=\s*[,}])', r': 0', fixed_data)
+                    
+                    # Fix 3: Add quotes around unquoted string values
+                    # Matches: "key": value (where value starts with letter and is not quoted)
                     pattern = r':\s*([a-zA-Z][a-zA-Z0-9\s]*?)(?=\s*[,}])'
                     fixed_data = re.sub(pattern, r': "\1"', fixed_data)
+                    
+                    # Fix 4: Handle trailing commas
+                    fixed_data = re.sub(r',(\s*[}\]])', r'\1', fixed_data)
                     
                     print(f"Attempting to fix JSON. Original: {raw_data}")
                     print(f"Fixed JSON: {fixed_data}")
