@@ -1,4 +1,5 @@
 Flask
+gunicorn
 pyswisseph
 pytz
 geopy
