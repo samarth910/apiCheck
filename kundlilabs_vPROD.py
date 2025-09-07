@@ -631,15 +631,15 @@ def generate_clean_json_output(birth_data=None):
         
     except Exception as e:
         return {
-            "error": f"Calculation failed: {str(e)}",
+            "error": "Miscalculation",
             "birth_info": {
-                "date": birth_data.get('ddd', '') + '-' + birth_data.get('mmm', '') + '-' + birth_data.get('yyyy', '') if birth_data else '',
-                "time": (birth_data.get('hh', '') + ':' + birth_data.get('mm', '')) if birth_data else '',
-                "place": birth_data.get('place', '') if birth_data else '',
+                "date": "",
+                "time": "",
+                "place": "",
                 "coordinates": ""
             },
             "lagna": {
-                "description": "Error in calculation",
+                "description": "Miscalculation",
                 "rashi": ""
             },
             "houses": []
