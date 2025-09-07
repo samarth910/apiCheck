@@ -7,11 +7,28 @@ app = Flask(__name__)
 def kundli():
     try:
         if request.method == "POST":
+            # Debug: Log the raw request data
+            raw_data = request.get_data(as_text=True)
+            print(f"Raw request data: {raw_data}")
+            
             # Get JSON data from the request
-            data_json = request.get_json()
+            data_json = request.get_json(force=True)
+            print(f"Parsed JSON: {data_json}")
             
             if not data_json:
-                return jsonify({"error": "No JSON data provided"}), 400
+                return jsonify({
+                    "error": "No JSON data provided",
+                    "raw_data": raw_data
+                }), 400
+            
+            # Check for Voiceflow template variables
+            for key, value in data_json.items():
+                if isinstance(value, str) and "variableID" in str(value):
+                    return jsonify({
+                        "error": "Voiceflow template variables detected. Please ensure variables are properly resolved before sending to API.",
+                        "received_data": data_json,
+                        "issue": f"Field '{key}' contains template variable: {value}"
+                    }), 400
             
             # Validate required fields
             required_fields = ['ddd', 'mmm', 'yyyy', 'hh', 'mm', 'place']
