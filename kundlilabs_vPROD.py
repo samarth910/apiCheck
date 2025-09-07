@@ -217,7 +217,7 @@ def get_houses(jd_ut: float, lat: float, lon: float):
 
 def get_house_signs(house_cusps: list) -> list:
     """
-    Determine the sign for each house based on the 1st house cusp (Ascendant)
+    Determine the sign for each house based on actual house cusp degrees
     
     Args:
         house_cusps: List of 12 house cusp degrees
@@ -227,27 +227,21 @@ def get_house_signs(house_cusps: list) -> list:
     """
     house_signs = []
     
-    # Get the Ascendant (1st house cusp) to determine the starting sign
-    ascendant_degree = normalize_degree(house_cusps[0])
-    ascendant_sign = get_rashi(ascendant_degree)
-    
-    # Find the index of the ascendant sign in RASHIS
-    ascendant_sign_index = RASHIS.index(ascendant_sign)
-    
-    # Map each house to its corresponding sign starting from the ascendant
-    for house_num in range(12):
-        sign_index = (ascendant_sign_index + house_num) % 12
-        house_signs.append(RASHIS[sign_index])
+    # Each house sign is determined by where its cusp degree falls in the zodiac
+    for cusp_degree in house_cusps:
+        normalized_degree = normalize_degree(cusp_degree)
+        rashi = get_rashi(normalized_degree)
+        house_signs.append(rashi)
     
     return house_signs
 
-def assign_planets_to_houses(planets: dict, house_cusps: list) -> dict:
+def assign_planets_to_houses(planets: dict, house_signs: list) -> dict:
     """
-    Assign each planet to its corresponding house based on house cusps
+    Assign each planet to its corresponding house based on rashi matching
     
     Args:
         planets: Dictionary of planet data
-        house_cusps: List of 12 house cusp degrees
+        house_signs: List of 12 house signs/rashis
     
     Returns:
         dict: Houses (1-12) with their planets
@@ -255,28 +249,13 @@ def assign_planets_to_houses(planets: dict, house_cusps: list) -> dict:
     house_planets = {i: [] for i in range(1, 13)}
     
     for planet_name, planet_data in planets.items():
-        planet_degree = normalize_degree(planet_data['degree'])
-        assigned_house = None
+        planet_rashi = planet_data['rashi']
         
-        # Check each house to find where the planet belongs
-        for house_num in range(12):
-            start_cusp = normalize_degree(house_cusps[house_num])
-            end_cusp = normalize_degree(house_cusps[(house_num + 1) % 12])
-            
-            # Check if planet is within this house
-            if start_cusp < end_cusp:
-                # Normal case (no zodiac wrap-around)
-                if start_cusp <= planet_degree < end_cusp:
-                    assigned_house = house_num + 1
-                    break
-            else:
-                # Wrap-around case (e.g., 355° to 25°)
-                if planet_degree >= start_cusp or planet_degree < end_cusp:
-                    assigned_house = house_num + 1
-                    break
-        
-        if assigned_house:
-            house_planets[assigned_house].append((planet_name, planet_data))
+        # Find which house this planet's rashi corresponds to
+        for house_num, house_rashi in enumerate(house_signs, 1):
+            if planet_rashi == house_rashi:
+                house_planets[house_num].append((planet_name, planet_data))
+                break
     
     return house_planets
 
@@ -439,14 +418,37 @@ def print_house_summary_table(planets: dict, house_cusps: list):
 # MAIN EXECUTION FUNCTION
 ################################################################################
 
-def main():
+def generate_kundli_data(birth_data=None):
     """
-    Main function to execute Vedic astrology calculations with static inputs
+    Generate Vedic astrology calculations and return structured data
+    
+    Args:
+        birth_data: Dictionary with keys 'ddd', 'mmm', 'yyyy', 'hh', 'mm', 'place'
+                   If None, uses static values
+    
+    Returns:
+        dict: Structured kundli data
     """
     try:
+        # Use provided data or fall back to static values
+        if birth_data:
+            place = birth_data.get('place', STATIC_PLACE)
+            day = str(birth_data.get('ddd', '09')).zfill(2)
+            month = str(birth_data.get('mmm', '10')).zfill(2)
+            year = str(birth_data.get('yyyy', '1995'))
+            hour = str(birth_data.get('hh', '8')).zfill(2)
+            minute = str(birth_data.get('mm', '22')).zfill(2)
+            
+            birthdate = f"{year}-{month}-{day}"
+            birthtime = f"{hour}:{minute}"
+        else:
+            place = STATIC_PLACE
+            birthdate = STATIC_BIRTHDATE
+            birthtime = STATIC_BIRTHTIME
+        
         # Step 1: Get location details and timezone
         lat, lon, timezone_str, dt_local = get_location_details(
-            STATIC_PLACE, STATIC_BIRTHDATE, STATIC_BIRTHTIME
+            place, birthdate, birthtime
         )
         
         # Step 2: Calculate Julian Day for Swiss Ephemeris
@@ -458,15 +460,320 @@ def main():
         # Step 4: Calculate house cusps
         house_cusps, ascmc = get_houses(jd_ut, lat, lon)
         
-        # Step 5: Generate the two requested tables
+        # Step 5: Generate structured data
         house_signs = get_house_signs(house_cusps)
-        print_house_rashi_mapping(house_signs)
-        print_rashi_planet_distribution(planets, house_signs)
+        house_planets = assign_planets_to_houses(planets, house_cusps)
+        
+        # Create structured response
+        result = {
+            "birth_details": {
+                "place": place,
+                "date": birthdate,
+                "time": birthtime,
+                "timezone": timezone_str,
+                "coordinates": {"latitude": lat, "longitude": lon}
+            },
+            "houses": [],
+            "planets": {},
+            "rashis": {}
+        }
+        
+        # Build houses data
+        for house_num in range(1, 13):
+            rashi = house_signs[house_num - 1]
+            planets_in_house = house_planets[house_num]
+            
+            house_data = {
+                "house_number": house_num,
+                "rashi": rashi,
+                "planets": []
+            }
+            
+            for planet_name, planet_data in planets_in_house:
+                degree_in_sign = get_degree_within_sign(planet_data['degree'])
+                planet_info = {
+                    "name": planet_name,
+                    "degree": round(degree_in_sign, 2),
+                    "retrograde": planet_data.get('retrograde', False),
+                    "combust": planet_data.get('combust', False)
+                }
+                house_data["planets"].append(planet_info)
+            
+            result["houses"].append(house_data)
+        
+        # Build planets data
+        for planet_name, planet_data in planets.items():
+            result["planets"][planet_name] = {
+                "degree": round(planet_data['degree'], 2),
+                "rashi": planet_data['rashi'],
+                "degree_in_sign": round(get_degree_within_sign(planet_data['degree']), 2),
+                "retrograde": planet_data.get('retrograde', False),
+                "combust": planet_data.get('combust', False)
+            }
+        
+        # Build rashis data
+        for house_num in range(1, 13):
+            rashi = house_signs[house_num - 1]
+            planets_in_rashi = []
+            
+            for planet_name, planet_data in planets.items():
+                if planet_data['rashi'] == rashi:
+                    degree_in_sign = get_degree_within_sign(planet_data['degree'])
+                    planets_in_rashi.append({
+                        "name": planet_name,
+                        "degree": round(degree_in_sign, 2)
+                    })
+            
+            result["rashis"][rashi] = {
+                "house_number": house_num,
+                "planets": planets_in_rashi
+            }
+        
+        return result
+        
+    except Exception as e:
+        return {
+            "error": f"Calculation failed: {str(e)}",
+            "birth_details": birth_data if birth_data else {}
+        }
+
+def generate_clean_json_output(birth_data=None):
+    """
+    Generate clean JSON output optimized for LLM processing
+    
+    Args:
+        birth_data: Dictionary with keys 'ddd', 'mmm', 'yyyy', 'hh', 'mm', 'place'
+                   If None, uses static values
+    
+    Returns:
+        dict: Clean JSON structure with LAGNA and house information
+    """
+    try:
+        # Use provided data or fall back to static values
+        if birth_data:
+            place = birth_data.get('place', STATIC_PLACE)
+            day = str(birth_data.get('ddd', '09')).zfill(2)
+            month = str(birth_data.get('mmm', '10')).zfill(2)
+            year = str(birth_data.get('yyyy', '1995'))
+            hour = str(birth_data.get('hh', '8')).zfill(2)
+            minute = str(birth_data.get('mm', '22')).zfill(2)
+            
+            birthdate = f"{year}-{month}-{day}"
+            birthtime = f"{hour}:{minute}"
+            date_display = f"{day}-{month}-{year}"
+        else:
+            place = STATIC_PLACE
+            birthdate = STATIC_BIRTHDATE
+            birthtime = STATIC_BIRTHTIME
+            date_display = f"{STATIC_BIRTHDATE.split('-')[2]}-{STATIC_BIRTHDATE.split('-')[1]}-{STATIC_BIRTHDATE.split('-')[0]}"
+        
+        # Get location details and calculate positions
+        lat, lon, timezone_str, dt_local = get_location_details(
+            place, birthdate, birthtime
+        )
+        
+        jd_ut = get_julian_day(dt_local)
+        planets = get_planet_positions(jd_ut)
+        house_cusps, ascmc = get_houses(jd_ut, lat, lon)
+        house_signs = get_house_signs(house_cusps)
+        house_planets = assign_planets_to_houses(planets, house_signs)
+        
+        # Create clean JSON structure
+        result = {
+            "birth_info": {
+                "date": date_display,
+                "time": birthtime,
+                "place": place,
+                "coordinates": f"{lat:.4f}°, {lon:.4f}°"
+            },
+            "lagna": {
+                "description": "LAGNA represents the Ascendant or 1st House, which is the zodiac sign rising on the eastern horizon at the time of birth. It determines the overall personality and physical appearance.",
+                "rashi": house_signs[0]
+            },
+            "houses": []
+        }
+        
+        # Build houses data
+        for house_num in range(1, 13):
+            rashi = house_signs[house_num - 1]
+            planets_in_house = house_planets[house_num]
+            
+            # Format planets with degrees
+            if planets_in_house:
+                planet_strings = []
+                for planet_name, planet_data in planets_in_house:
+                    degree_in_sign = get_degree_within_sign(planet_data['degree'])
+                    
+                    # Add status indicators
+                    status_indicators = []
+                    if planet_data.get('retrograde'):
+                        status_indicators.append('R')
+                    if planet_data.get('combust'):
+                        status_indicators.append('Combust')
+                    
+                    status_str = f" [{', '.join(status_indicators)}]" if status_indicators else ""
+                    planet_string = f"{planet_name}({degree_in_sign:.2f}deg){status_str}"
+                    planet_strings.append(planet_string)
+                
+                planets_display = ", ".join(planet_strings)
+            else:
+                planets_display = ""
+            
+            house_data = {
+                "house_number": house_num,
+                "rashi": rashi,
+                "planets": planets_display
+            }
+            
+            result["houses"].append(house_data)
+        
+        return result
+        
+    except Exception as e:
+        return {
+            "error": f"Calculation failed: {str(e)}",
+            "birth_info": {
+                "date": birth_data.get('ddd', '') + '-' + birth_data.get('mmm', '') + '-' + birth_data.get('yyyy', '') if birth_data else '',
+                "time": (birth_data.get('hh', '') + ':' + birth_data.get('mm', '')) if birth_data else '',
+                "place": birth_data.get('place', '') if birth_data else '',
+                "coordinates": ""
+            },
+            "lagna": {
+                "description": "Error in calculation",
+                "rashi": ""
+            },
+            "houses": []
+        }
+
+def display_json_output(birth_data=None, test_case_num=None):
+    """
+    Display JSON output for viewing
+    
+    Args:
+        birth_data: Dictionary with keys 'ddd', 'mmm', 'yyyy', 'hh', 'mm', 'place'
+                   If None, uses static values
+        test_case_num: Test case number for header
+    """
+    import json
+    
+    if test_case_num:
+        print(f"\nTest case #{test_case_num} - JSON Output")
+        print("=" * 50)
+    else:
+        print(f"\nKundli JSON Output")
+        print("=" * 30)
+    
+    try:
+        result = generate_clean_json_output(birth_data)
+        print(json.dumps(result, indent=2))
+    except Exception as e:
+        print(f"Error generating JSON: {e}")
+
+def display_table_output(birth_data=None, test_case_num=None):
+    """
+    Display clean formatted output with custom birth data
+    
+    Args:
+        birth_data: Dictionary with keys 'ddd', 'mmm', 'yyyy', 'hh', 'mm', 'place'
+                   If None, uses static values
+        test_case_num: Test case number for header
+    """
+    try:
+        # Use provided data or fall back to static values
+        if birth_data:
+            place = birth_data.get('place', STATIC_PLACE)
+            day = str(birth_data.get('ddd', '09')).zfill(2)
+            month = str(birth_data.get('mmm', '10')).zfill(2)
+            year = str(birth_data.get('yyyy', '1995'))
+            hour = str(birth_data.get('hh', '8')).zfill(2)
+            minute = str(birth_data.get('mm', '22')).zfill(2)
+            
+            birthdate = f"{year}-{month}-{day}"
+            birthtime = f"{hour}:{minute}"
+            date_display = f"{day}-{month}-{year}"
+        else:
+            place = STATIC_PLACE
+            birthdate = STATIC_BIRTHDATE
+            birthtime = STATIC_BIRTHTIME
+            date_display = f"{STATIC_BIRTHDATE.split('-')[2]}-{STATIC_BIRTHDATE.split('-')[1]}-{STATIC_BIRTHDATE.split('-')[0]}"
+        
+        # Get location details and timezone
+        lat, lon, timezone_str, dt_local = get_location_details(
+            place, birthdate, birthtime
+        )
+        
+        # Calculate positions
+        jd_ut = get_julian_day(dt_local)
+        planets = get_planet_positions(jd_ut)
+        house_cusps, ascmc = get_houses(jd_ut, lat, lon)
+        house_signs = get_house_signs(house_cusps)
+        house_planets = assign_planets_to_houses(planets, house_signs)
+        
+        # Display clean output
+        if test_case_num:
+            print(f"\nTest case #{test_case_num}")
+        else:
+            print(f"\nKundli Analysis")
+            
+        print(f"{date_display} || {birthtime} || {place} ({lat:.4f}°, {lon:.4f}°)")
+        
+        print(f"\nRashi || House")
+        print("-" * 20)
+        for i, rashi in enumerate(house_signs, 1):
+            print(f"{rashi:<12} || {i:2}")
+        
+        print(f"\nPlanet || Rashi")
+        print("-" * 20)
+        for planet_name, planet_data in planets.items():
+            print(f"{planet_name:<8} || {planet_data['rashi']}")
+        
+        print(f"\nVedic Astro Summary")
+        print("=" * 80)
+        print("House || Rashi        || Planet (with degree)")
+        print("-" * 80)
+        
+        for house_num in range(1, 13):
+            rashi = house_signs[house_num - 1]
+            planets_in_house = house_planets[house_num]
+            
+            if planets_in_house:
+                planet_strings = []
+                for planet_name, planet_data in planets_in_house:
+                    degree_in_sign = get_degree_within_sign(planet_data['degree'])
+                    status_indicators = []
+                    if planet_data.get('retrograde'):
+                        status_indicators.append('R')
+                    if planet_data.get('combust'):
+                        status_indicators.append('Combust')
+                    
+                    status_str = f" [{', '.join(status_indicators)}]" if status_indicators else ""
+                    planet_info = f"{planet_name} ({degree_in_sign:.2f}° {planet_data['rashi']}){status_str}"
+                    planet_strings.append(planet_info)
+                
+                planets_display = ", ".join(planet_strings)
+            else:
+                planets_display = "-"
+            
+            print(f"{house_num:5} || {rashi:<11} || {planets_display}")
+        
+        print("=" * 80)
         
     except Exception as e:
         print(f"[ERROR] Calculation failed: {str(e)}")
         import traceback
         traceback.print_exc()
+
+def main(birth_data=None):
+    """
+    Main function to execute Vedic astrology calculations
+    Can accept birth_data for API calls or use static values for standalone execution
+    """
+    if birth_data:
+        # When called from API, return clean JSON optimized for LLM processing
+        return generate_clean_json_output(birth_data)
+    else:
+        # When called standalone, print the traditional output
+        display_table_output()
 
 ################################################################################
 # PROGRAM ENTRY POINT
