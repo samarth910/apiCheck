@@ -1,0 +1,6 @@
+Flask
+pyswisseph
+pytz
+geopy
+timezonefinder
+tabulate
