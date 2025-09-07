@@ -7,17 +7,32 @@ app = Flask(__name__)
 def kundli():
     try:
         if request.method == "POST":
+            # Check content type
+            if not request.is_json:
+                return jsonify({
+                    "error": "Content-Type must be application/json",
+                    "received_content_type": request.content_type
+                }), 400
+            
             # Debug: Log the raw request data
             raw_data = request.get_data(as_text=True)
             print(f"Raw request data: {raw_data}")
             
             # Get JSON data from the request
-            data_json = request.get_json(force=True)
+            try:
+                data_json = request.get_json()
+            except Exception as json_error:
+                return jsonify({
+                    "error": "Invalid JSON format",
+                    "details": str(json_error),
+                    "raw_data": raw_data
+                }), 400
+            
             print(f"Parsed JSON: {data_json}")
             
             if not data_json:
                 return jsonify({
-                    "error": "No JSON data provided",
+                    "error": "No JSON data provided or empty JSON",
                     "raw_data": raw_data
                 }), 400
             
