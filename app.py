@@ -22,11 +22,33 @@ def kundli():
             try:
                 data_json = request.get_json()
             except Exception as json_error:
-                return jsonify({
-                    "error": "Invalid JSON format",
-                    "details": str(json_error),
-                    "raw_data": raw_data
-                }), 400
+                # Try to fix common JSON issues and parse again
+                try:
+                    import re
+                    import json
+                    
+                    # Fix missing quotes around string values (common issue)
+                    fixed_data = raw_data
+                    
+                    # Pattern to find unquoted string values after colons
+                    # Matches: "key": value (where value is not a number, boolean, or already quoted)
+                    pattern = r':\s*([a-zA-Z][a-zA-Z0-9\s]*?)(?=\s*[,}])'
+                    fixed_data = re.sub(pattern, r': "\1"', fixed_data)
+                    
+                    print(f"Attempting to fix JSON. Original: {raw_data}")
+                    print(f"Fixed JSON: {fixed_data}")
+                    
+                    data_json = json.loads(fixed_data)
+                    print(f"Successfully parsed fixed JSON: {data_json}")
+                    
+                except Exception as fix_error:
+                    return jsonify({
+                        "error": "Invalid JSON format - could not auto-fix",
+                        "original_error": str(json_error),
+                        "fix_attempt_error": str(fix_error),
+                        "raw_data": raw_data,
+                        "common_issue": "Check if string values like place names have quotes around them"
+                    }), 400
             
             print(f"Parsed JSON: {data_json}")
             
@@ -59,14 +81,39 @@ def kundli():
             # Call main function with birth data
             result = main(data_json)
             
+            # Debug: Print the result being sent back
+            print(f"=== VEDIC CHART SUMMARY - OUTPUT ===")
+            print(f"Birth Data Input: {data_json}")
+            print(f"Result Type: {type(result)}")
+            print(f"Result Keys: {list(result.keys()) if isinstance(result, dict) else 'Not a dict'}")
+            
+            if isinstance(result, dict):
+                if 'birth_info' in result:
+                    print(f"Birth Info: {result['birth_info']}")
+                if 'lagna' in result:
+                    print(f"Lagna: {result['lagna']}")
+                if 'houses' in result:
+                    print(f"Number of Houses: {len(result['houses'])}")
+                    for i, house in enumerate(result['houses'][:3]):  # Show first 3 houses
+                        print(f"House {i+1}: {house}")
+                if 'error' in result:
+                    print(f"ERROR in result: {result['error']}")
+            
+            print(f"=== END VEDIC CHART SUMMARY ===")
+            
             # Check if there was an error in the calculation
             if "error" in result:
                 return jsonify(result), 500
             
-            return jsonify({
+            final_response = {
                 "success": True,
                 "kundli_data": result
-            })
+            }
+            
+            # Debug: Print final response
+            print(f"Final API Response: {final_response}")
+            
+            return jsonify(final_response)
         
         else:
             # For GET requests, use static values
